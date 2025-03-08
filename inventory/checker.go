@@ -15,20 +15,20 @@ import (
 
 // InventoryResult represents the result of a product inventory check
 type InventoryResult struct {
-	StoreID      string
-	ProductName  string
-	ProductURL   string
-	Count        int
-	RawText      string
-	LastChecked  time.Time
-	Error        error
+	StoreID     string
+	ProductName string
+	ProductURL  string
+	Count       int
+	RawText     string
+	LastChecked time.Time
+	Error       error
 }
 
 // Checker handles checking product inventory
 type Checker struct {
-	config      *config.Config
-	service     *selenium.Service
-	webDriver   selenium.WebDriver
+	config    *config.Config
+	service   *selenium.Service
+	webDriver selenium.WebDriver
 }
 
 // NewChecker creates and initializes a new inventory checker
@@ -108,7 +108,7 @@ func (c *Checker) Start(ctx context.Context, resultChan chan<- InventoryResult) 
 // checkInventory checks inventory for all configured products
 func (c *Checker) checkInventory(resultChan chan<- InventoryResult) {
 	storeID := strconv.Itoa(c.config.StoreID)
-	
+
 	for _, product := range c.config.Products {
 		result := c.CheckProductInventory(storeID, product)
 		resultChan <- result
@@ -132,7 +132,7 @@ func (c *Checker) CheckProductInventory(storeID string, product config.Product) 
 
 	// Look for inventory information
 	// This selector might need adjustment based on MicroCenter's actual HTML structure
-	inventoryElement, err := c.webDriver.FindElement(selenium.ByCSSSelector, ".inventory-msg")
+	inventoryElement, err := c.webDriver.FindElement(selenium.ByID, "pnlInventory")
 	if err != nil {
 		result.Error = fmt.Errorf("failed to find inventory element: %w", err)
 		return result
@@ -154,18 +154,18 @@ func (c *Checker) CheckProductInventory(storeID string, product config.Product) 
 func parseInventoryCount(text string) int {
 	// This is a simplified example. Actual parsing logic will depend on MicroCenter's format.
 	text = strings.TrimSpace(text)
-	
+
 	// Handle "Out of stock" case
 	if strings.Contains(strings.ToLower(text), "out of stock") {
 		return 0
 	}
-	
+
 	// Try to extract a number
 	for _, word := range strings.Fields(text) {
 		if num, err := strconv.Atoi(word); err == nil {
 			return num
 		}
 	}
-	
+
 	return 0
 }
