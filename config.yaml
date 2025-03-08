@@ -1,0 +1,13 @@
+store_id: 191  # Example store ID
+check_interval: 5m  # Check every 5 minutes
+
+selenium:
+  chrome_driver_path: "/home/will/.flox/run/x86_64-linux.default.dev/bin/chromedriver"
+  headless: true
+  timeout: 30s
+
+products:
+  - name: "Raspberry Pi 4"
+    url: "https://www.microcenter.com/product/621439/raspberry-pi-4-model-b-4gb-ddr4"
+  - name: "Raspberry Pi 5"
+    url: "https://www.microcenter.com/product/673711/raspberry-pi-5"

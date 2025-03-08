@@ -56,11 +56,17 @@ func main() {
 		}
 	}()
 
+	// Channel for inventory results
+	resultChan := make(chan inventory.InventoryResult, 10)
+
 	// Start the checker in a separate goroutine
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go checker.Start(ctx)
+	go checker.Start(ctx, resultChan)
+
+	// Process results and update metrics
+	go processResults(resultChan)
 
 	// Wait for shutdown signal
 	<-stop
@@ -72,5 +78,46 @@ func main() {
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("Server shutdown failed: %v", err)
+	}
+}
+
+// processResults processes inventory check results and updates metrics
+func processResults(resultChan <-chan inventory.InventoryResult) {
+	for result := range resultChan {
+		start := result.LastChecked
+		duration := time.Since(start).Seconds()
+		
+		if result.Error != nil {
+			log.Printf("Error checking inventory for %s: %v", result.ProductName, result.Error)
+			
+			prometheus.ScrapeFailureCounter.WithLabelValues(
+				result.ProductURL, 
+				result.Error.Error(),
+			).Inc()
+			
+			prometheus.ScrapeDurationSeconds.WithLabelValues(
+				result.ProductURL,
+			).Observe(duration)
+			
+			continue
+		}
+		
+		// Update metrics for successful scrape
+		prometheus.ProductInventoryGauge.WithLabelValues(
+			result.StoreID,
+			result.ProductName,
+			result.ProductURL,
+		).Set(float64(result.Count))
+		
+		prometheus.ScrapeSuccessCounter.WithLabelValues(
+			result.ProductURL,
+		).Inc()
+		
+		prometheus.ScrapeDurationSeconds.WithLabelValues(
+			result.ProductURL,
+		).Observe(duration)
+		
+		log.Printf("Product: %s, Store: %s, Inventory: %d", 
+			result.ProductName, result.StoreID, result.Count)
 	}
 }

@@ -11,8 +11,18 @@ import (
 	"github.com/tebeka/selenium"
 	"github.com/tebeka/selenium/chrome"
 	"github.com/willgorman/microcenter-inventory/config"
-	"github.com/willgorman/microcenter-inventory/prometheus"
 )
+
+// InventoryResult represents the result of a product inventory check
+type InventoryResult struct {
+	StoreID      string
+	ProductName  string
+	ProductURL   string
+	Count        int
+	RawText      string
+	LastChecked  time.Time
+	Error        error
+}
 
 // Checker handles checking product inventory
 type Checker struct {
@@ -77,17 +87,17 @@ func (c *Checker) Close() {
 }
 
 // Start begins the periodic inventory checking
-func (c *Checker) Start(ctx context.Context) {
+func (c *Checker) Start(ctx context.Context, resultChan chan<- InventoryResult) {
 	ticker := time.NewTicker(c.config.CheckInterval)
 	defer ticker.Stop()
 
 	// Do an initial check immediately
-	c.checkInventory()
+	c.checkInventory(resultChan)
 
 	for {
 		select {
 		case <-ticker.C:
-			c.checkInventory()
+			c.checkInventory(resultChan)
 		case <-ctx.Done():
 			log.Println("Inventory checker stopping due to context cancellation")
 			return
@@ -96,61 +106,48 @@ func (c *Checker) Start(ctx context.Context) {
 }
 
 // checkInventory checks inventory for all configured products
-func (c *Checker) checkInventory() {
+func (c *Checker) checkInventory(resultChan chan<- InventoryResult) {
 	storeID := strconv.Itoa(c.config.StoreID)
 	
 	for _, product := range c.config.Products {
-		timer := prometheus.ScrapeDurationSeconds.WithLabelValues(product.URL)
-		start := time.Now()
-		
-		err := c.checkProductInventory(storeID, product)
-		
-		duration := time.Since(start).Seconds()
-		timer.Observe(duration)
-		
-		if err != nil {
-			log.Printf("Error checking inventory for %s: %v", product.Name, err)
-			prometheus.ScrapeFailureCounter.WithLabelValues(product.URL, err.Error()).Inc()
-		} else {
-			prometheus.ScrapeSuccessCounter.WithLabelValues(product.URL).Inc()
-		}
+		result := c.CheckProductInventory(storeID, product)
+		resultChan <- result
 	}
 }
 
-// checkProductInventory checks inventory for a single product
-func (c *Checker) checkProductInventory(storeID string, product config.Product) error {
-	// Navigate to the product page
-	if err := c.webDriver.Get(product.URL); err != nil {
-		return fmt.Errorf("failed to load page: %w", err)
+// CheckProductInventory checks inventory for a single product
+func (c *Checker) CheckProductInventory(storeID string, product config.Product) InventoryResult {
+	result := InventoryResult{
+		StoreID:     storeID,
+		ProductName: product.Name,
+		ProductURL:  product.URL,
+		LastChecked: time.Now(),
 	}
 
-	// Find the store selection dropdown (if needed)
-	// In some cases, we might need to select the store first
-	
+	// Navigate to the product page
+	if err := c.webDriver.Get(product.URL); err != nil {
+		result.Error = fmt.Errorf("failed to load page: %w", err)
+		return result
+	}
+
 	// Look for inventory information
 	// This selector might need adjustment based on MicroCenter's actual HTML structure
 	inventoryElement, err := c.webDriver.FindElement(selenium.ByCSSSelector, ".inventory-msg")
 	if err != nil {
-		return fmt.Errorf("failed to find inventory element: %w", err)
+		result.Error = fmt.Errorf("failed to find inventory element: %w", err)
+		return result
 	}
 
 	inventoryText, err := inventoryElement.Text()
 	if err != nil {
-		return fmt.Errorf("failed to get inventory text: %w", err)
+		result.Error = fmt.Errorf("failed to get inventory text: %w", err)
+		return result
 	}
 
-	// Parse the inventory count from text like "5 in stock at [Store]"
-	count := parseInventoryCount(inventoryText)
-	
-	// Update the Prometheus gauge
-	prometheus.ProductInventoryGauge.WithLabelValues(
-		storeID,
-		product.Name,
-		product.URL,
-	).Set(float64(count))
+	result.RawText = inventoryText
+	result.Count = parseInventoryCount(inventoryText)
 
-	log.Printf("Product: %s, Store: %s, Inventory: %d", product.Name, storeID, count)
-	return nil
+	return result
 }
 
 // parseInventoryCount extracts the inventory count from the text
