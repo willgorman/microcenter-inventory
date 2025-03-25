@@ -69,6 +69,17 @@ func NewChecker(cfg *config.Config) (*Checker, error) {
 		return nil, fmt.Errorf("failed to set timeout: %w", err)
 	}
 
+	err = wd.AddCookie(&selenium.Cookie{
+		Name:   "storeSelected",
+		Value:  strconv.Itoa(cfg.StoreID),
+		Path:   "/",
+		Domain: ".microcenter.com",
+		Secure: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to set store: %w", err)
+	}
+
 	return &Checker{
 		config:    cfg,
 		service:   service,
