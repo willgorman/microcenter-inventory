@@ -130,6 +130,9 @@ func (c *Checker) CheckProductInventory(storeID string, product config.Product) 
 		return result
 	}
 
+	// FIXME: (willgorman) takes some time before the count loads, how can I check that instead of just waiting?
+	time.Sleep(15 * time.Second)
+
 	// Look for inventory information
 	// This selector might need adjustment based on MicroCenter's actual HTML structure
 	inventoryElement, err := c.webDriver.FindElement(selenium.ByID, "pnlInventory")
@@ -156,12 +159,13 @@ func parseInventoryCount(text string) int {
 	text = strings.TrimSpace(text)
 
 	// Handle "Out of stock" case
-	if strings.Contains(strings.ToLower(text), "out of stock") {
+	if strings.Contains(strings.ToLower(text), "sold out") {
 		return 0
 	}
 
 	// Try to extract a number
 	for _, word := range strings.Fields(text) {
+		word = strings.Replace(word, "+", "", -1)
 		if num, err := strconv.Atoi(word); err == nil {
 			return num
 		}
